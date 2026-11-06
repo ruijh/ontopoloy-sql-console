@@ -1,0 +1,20 @@
+{
+  "name": "ontsql-demo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "OntopoloySQL Console：本体驱动的 NL→SQL Demo，确定性召回、12 闸校验、真实 SQLite / WASM 执行、评测与反馈闭环",
+  "scripts": {
+    "start": "node server.mjs",
+    "build": "node scripts/build-pages.mjs",
+    "build:pages": "node scripts/build-pages.mjs",
+    "test": "node scripts/build-pages.mjs && node test/theme.mjs && node test/smoke.mjs && node test/ui-smoke.mjs && node test/pages.mjs",
+    "test:api": "node test/smoke.mjs",
+    "test:ui": "node test/ui-smoke.mjs",
+    "test:theme": "node test/theme.mjs",
+    "test:pages": "node scripts/build-pages.mjs && node test/pages.mjs"
+  },
+  "engines": {
+    "node": ">=22.5"
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "name": "sql.js-vendored",
+  "version": "1.15.2",
+  "private": true,
+  "type": "commonjs",
+  "license": "MIT"
+}

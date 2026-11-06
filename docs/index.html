@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OntopoloySQL Console · 本体驱动的 NL→SQL</title>
+  <meta name="description" content="Ontology-driven NL2SQL 可执行演示：七路召回、加权 RRF、规则三元组、12 项校验、真实 SQLite 执行与 8 例评测。">
+  <meta name="theme-color" content="#06090d">
+  <script>
+    (function () {
+      var allowed = ['palantir-dark', 'palantir-light', 'macos-dark', 'macos-light', 'console-dark', 'console-light'];
+      var theme = 'palantir-dark';
+      try {
+        var saved = localStorage.getItem('ontsql.theme.v1');
+        if (saved && allowed.indexOf(saved) >= 0) theme = saved;
+      } catch (e) {}
+      document.documentElement.setAttribute('data-theme', theme);
+      document.documentElement.style.colorScheme = theme.indexOf('light') >= 0 ? 'light' : 'dark';
+    })();
+  </script>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <div class="ambient" aria-hidden="true"></div>
+
+  <header class="topbar">
+    <div class="brand">
+      <div class="mark" aria-hidden="true"><span></span></div>
+      <div class="brand-copy">
+        <h1>OntopoloySQL<span>Console</span></h1>
+        <p>本体驱动的 NL→SQL · 可执行演示</p>
+      </div>
+    </div>
+    <div class="top-meta">
+      <div class="theme-menu" id="theme-menu">
+        <button class="theme-trigger" id="theme-trigger" type="button"
+                aria-haspopup="true" aria-expanded="false" aria-controls="theme-popover"
+                title="切换界面主题（Ctrl/Cmd + Shift + L）">
+          <span class="theme-swatch" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span class="theme-trigger-text"><small>Theme</small><b id="theme-label">Palantir · 深色</b></span>
+          <span class="theme-caret" aria-hidden="true">▾</span>
+        </button>
+        <div class="theme-popover" id="theme-popover" role="dialog" aria-label="界面主题" hidden>
+          <div class="theme-popover-head"><b>界面主题</b><span>3 种风格 · 明暗双色</span></div>
+          <div class="theme-grid" id="theme-grid" role="radiogroup" aria-label="选择界面主题"></div>
+          <div class="theme-popover-foot">
+            <kbd>Ctrl</kbd><span>+</span><kbd>Shift</kbd><span>+</span><kbd>L</kbd><span>快速轮换</span>
+          </div>
+        </div>
+      </div>
+      <span class="pill mono" id="version-pill">ont-b2c-trade@2026.11.1</span>
+      <span class="live"><i></i><span id="health-text">SQLite 在线</span></span>
+    </div>
+  </header>
+
+  <div class="static-strip" id="static-strip" hidden>
+    <span class="static-dot" aria-hidden="true"></span>
+    <b>GitHub Pages</b>
+    <span>SQLite 编译为 WebAssembly，全量数据在浏览器内真实执行；无后端、无在线 LLM。</span>
+    <a id="static-repo" href="https://github.com/ruijh/ontopoloy-sql-console" target="_blank" rel="noreferrer">源码与方案 ↗</a>
+  </div>
+
+  <nav class="tabs" aria-label="主导航">
+    <button class="tab active" data-tab="generate">生成结果<span class="tab-dot"></span></button>
+    <button class="tab" data-tab="eval">评测台</button>
+    <button class="tab" data-tab="ontology">本体资产</button>
+    <button class="tab" data-tab="feedback">反馈飞轮</button>
+    <div class="tabs-spacer"></div>
+    <span class="tabs-note mono">deterministic · fail-closed</span>
+  </nav>
+
+  <main>
+    <section class="view" id="view-generate">
+      <section class="composer card">
+        <div class="composer-head">
+          <div>
+            <div class="eyebrow">NL → SQL</div>
+            <h2>用业务语言提问，拿回可校验的 SQL</h2>
+          </div>
+          <div class="composer-flags">
+            <span class="flag">无 LLM 排序</span>
+            <span class="flag">规则必引用</span>
+            <span class="flag">全链路可回溯</span>
+          </div>
+        </div>
+        <form id="query-form" class="query-form">
+          <label class="sr-only" for="question">业务问题</label>
+          <textarea id="question" rows="2" maxlength="300" spellcheck="false">上月各品类成交额及同比</textarea>
+          <button class="run-btn" id="run-btn" type="submit">
+            <span class="run-icon" aria-hidden="true">▶</span>
+            <span>生成并校验</span>
+            <kbd>⌘ ↵</kbd>
+          </button>
+        </form>
+        <div class="presets" id="presets" aria-label="示例问题">
+          <span class="presets-label">试试</span>
+          <button class="preset" data-q="上月各品类成交额及同比">品类成交额 · 同比</button>
+          <button class="preset" data-q="上月各店铺类型成交额">店铺类型 · 规则分支</button>
+          <button class="preset" data-q="上月各渠道退款率">渠道退款率 · 比率口径</button>
+          <button class="preset" data-q="上月各渠道新客数">渠道新客 · 字段语义</button>
+          <button class="preset" data-q="上月各品牌成交额 top 3">品牌 TopN</button>
+        </div>
+        <div class="composer-foot">
+          <span>意图字典 → 7 路召回 → 加权 RRF → 规则注入 → 12 项校验 → SQLite 执行</span>
+          <span class="mono" id="run-status">等待运行</span>
+        </div>
+      </section>
+
+      <section class="pipeline" id="pipeline" aria-label="生成流水线">
+        <div class="pipe-step" data-step="intent"><span class="pipe-num">01</span><div><b>意图解析</b><small>指标 · 维度 · 时间</small></div><em>—</em></div>
+        <div class="pipe-step" data-step="recall"><span class="pipe-num">02</span><div><b>七路召回</b><small>R1–R7 · 加权 RRF</small></div><em>—</em></div>
+        <div class="pipe-step" data-step="generate"><span class="pipe-num">03</span><div><b>SQL 生成</b><small>规则注入 · 引用</small></div><em>—</em></div>
+        <div class="pipe-step" data-step="validate"><span class="pipe-num">04</span><div><b>确定性校验</b><small>12 项 · fail-closed</small></div><em>—</em></div>
+        <div class="pipe-step" data-step="execute"><span class="pipe-num">05</span><div><b>执行结果</b><small>真实 SQLite</small></div><em>—</em></div>
+      </section>
+
+      <div class="error-banner" id="error-banner" hidden></div>
+
+      <div class="layout">
+        <div class="col-main">
+          <section class="card intent-card">
+            <div class="card-head">
+              <div><div class="eyebrow">Intent</div><h3>解析出的意图</h3></div>
+              <span class="badge" id="confidence-badge">置信度 —</span>
+            </div>
+            <div id="intent-body" class="intent-body skeleton-lines"><span></span><span></span><span></span></div>
+          </section>
+
+          <section class="card sql-card">
+            <div class="card-head">
+              <div><div class="eyebrow">Generated SQL</div><h3>生成 SQL</h3></div>
+              <div class="card-actions">
+                <span class="badge mono" id="sql-dialect">hive → sqlite</span>
+                <button class="ghost-btn" id="copy-sql" type="button">复制</button>
+              </div>
+            </div>
+            <pre class="sql-block"><code id="sql-code">-- 运行一次生成，查看 SQL</code></pre>
+            <div class="sql-meta" id="sql-meta"></div>
+          </section>
+
+          <section class="card validation-card">
+            <div class="card-head">
+              <div><div class="eyebrow">Guardrails</div><h3>12 项确定性校验</h3></div>
+              <div class="val-summary" id="val-summary"><strong>—</strong><span>/ 12</span></div>
+            </div>
+            <div class="check-grid" id="check-grid"></div>
+          </section>
+
+          <section class="card result-card">
+            <div class="card-head">
+              <div><div class="eyebrow">Execution</div><h3>执行结果</h3></div>
+              <div class="card-actions"><span class="badge" id="result-meta">—</span></div>
+            </div>
+            <div class="table-wrap" id="result-table"><p class="empty">运行后展示 SQLite 返回的真实数据</p></div>
+            <div class="data-quality" id="data-quality"></div>
+          </section>
+        </div>
+
+        <aside class="col-side">
+          <section class="card recall-card">
+            <div class="card-head">
+              <div><div class="eyebrow">Recall</div><h3>七路召回</h3></div>
+              <span class="badge mono" id="recall-coverage">— / 7</span>
+            </div>
+            <p class="formula mono">score = Σ w<sub>r</sub> / (60 + rank)</p>
+            <div id="routes" class="routes"><p class="empty">等待召回</p></div>
+          </section>
+
+          <section class="card pack-card">
+            <div class="card-head">
+              <div><div class="eyebrow">Context Pack</div><h3>上下文包</h3></div>
+              <span class="badge mono" id="pack-id">—</span>
+            </div>
+            <div class="token-bar"><div id="token-fill"></div></div>
+            <div class="token-row"><span id="token-used">— tokens</span><span id="token-budget">预算 9000</span></div>
+            <div class="pack-list" id="pack-list"></div>
+          </section>
+
+          <section class="card citations-card">
+            <div class="card-head">
+              <div><div class="eyebrow">Citations</div><h3>引用与回溯</h3></div>
+              <span class="badge" id="citation-count">0</span>
+            </div>
+            <div class="citations" id="citations"><p class="empty">生成后展示规则、字段与证据引用</p></div>
+          </section>
+        </aside>
+      </div>
+    </section>
+
+    <section class="view" id="view-eval" hidden>
+      <div class="section-head">
+        <div>
+          <div class="eyebrow">Evaluation</div>
+          <h2>8 例评测：本体增强 vs 无本体 baseline</h2>
+          <p>同一批问题、同一张表、同一个执行引擎。差异只来自规则、口径与字段语义。</p>
+        </div>
+        <button class="ghost-btn" id="refresh-eval" type="button">重新评测</button>
+      </div>
+      <div id="eval-body"><p class="empty">加载评测结果…</p></div>
+    </section>
+
+    <section class="view" id="view-ontology" hidden>
+      <div class="section-head">
+        <div>
+          <div class="eyebrow">Ontology Assets</div>
+          <h2>本体资产台账</h2>
+          <p>表、字段、指标、规则与生产证据；规则必须带指纹与证据节点。</p>
+        </div>
+        <div class="search-box"><input id="ontology-search" type="search" placeholder="搜索表 / 字段 / 指标 / 规则…" autocomplete="off"></div>
+      </div>
+      <div id="ontology-stats" class="stat-grid"></div>
+      <div class="sub-tabs" id="ontology-tabs">
+        <button class="sub-tab active" data-ont="tables">表与字段</button>
+        <button class="sub-tab" data-ont="metrics">指标</button>
+        <button class="sub-tab" data-ont="rules">规则</button>
+        <button class="sub-tab" data-ont="evidence">证据与血缘</button>
+      </div>
+      <div id="ontology-body"><p class="empty">加载本体资产…</p></div>
+    </section>
+
+    <section class="view" id="view-feedback" hidden>
+      <div class="section-head">
+        <div>
+          <div class="eyebrow">Feedback Flywheel</div>
+          <h2>从 SQL diff 到本体草稿</h2>
+          <p>人工改写不是直接改库：先提取变更算子，再分诊、评审、过三道闸。</p>
+        </div>
+        <span class="badge" id="feedback-count">队列 0</span>
+      </div>
+      <div class="feedback-flow">
+        <span>线上 diff</span><i>→</i><span>变更算子</span><i>→</i><span>分诊 P1/P2/P4</span><i>→</i><span>三闸评审</span><i>→</i><span>版本发布</span>
+      </div>
+      <div class="layout feedback-layout">
+        <section class="card">
+          <div class="card-head"><div><div class="eyebrow">Submit</div><h3>提交一条改写</h3></div><span class="badge">演示不自动改本体</span></div>
+          <form id="feedback-form" class="feedback-form">
+            <label>业务问题<textarea id="fb-question" rows="2" required></textarea></label>
+            <label>AI 生成的 SQL<textarea id="fb-ai" rows="4" class="mono" required></textarea></label>
+            <label>人工修正后的 SQL<textarea id="fb-final" rows="4" class="mono" required placeholder="例如补上 is_refund = 0，或把 buyer_cnt 改成 new_buyer_cnt"></textarea></label>
+            <label>备注<input id="fb-note" type="text" placeholder="为什么改？影响哪些报表？"></label>
+            <button class="run-btn" type="submit">提交分诊</button>
+          </form>
+          <div id="fb-result" class="fb-result" hidden></div>
+        </section>
+        <section class="card">
+          <div class="card-head"><div><div class="eyebrow">Queue</div><h3>分诊队列</h3></div><span class="badge mono" id="fb-queue-count">0</span></div>
+          <div id="fb-queue" class="fb-queue"><p class="empty">还没有反馈，先提交一条</p></div>
+        </section>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <span>OntopoloySQL Console · demo</span>
+    <span>真实 SQLite 执行 · 确定性模板生成（非在线 LLM）· 数据截至 2026-11-06</span>
+    <span class="mono">ont-b2c-trade@2026.11.1</span>
+  </footer>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="./runtime/sql-wasm.js"></script>
+  <script src="./runtime/static-boot.mjs" type="module"></script>
+</body>
+</html>

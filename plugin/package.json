@@ -1,0 +1,9 @@
+{
+  "name": "dsh-ontsql-demo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "把 OntopoloySQL Console 挂到 DSH Web 的 /ontsql/，经平台网关在浏览器里打开",
+  "main": "index.js",
+  "files": ["index.js"]
+}
